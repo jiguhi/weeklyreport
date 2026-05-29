@@ -182,6 +182,14 @@ st.markdown(
         -webkit-text-fill-color: #111827 !important;
     }
 
+    [data-testid="stMain"] .stTextInput label,
+    [data-testid="stMain"] .stTextInput label p,
+    [data-testid="stMain"] .stTextArea label,
+    [data-testid="stMain"] .stTextArea label p {
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+    }
+
     .stTextInput input,
     .stDateInput input,
     .stTextArea textarea,

@@ -168,6 +168,45 @@ st.markdown(
     .console-content::-webkit-scrollbar-thumb:hover {
         background: #f59e0b;
     }
+
+    label,
+    .stTextInput label,
+    .stTextInput label p,
+    .stDateInput label,
+    .stDateInput label p,
+    .stSelectbox label,
+    .stSelectbox label p,
+    .stTextArea label,
+    .stTextArea label p {
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
+    }
+
+    .stTextInput input,
+    .stDateInput input,
+    .stTextArea textarea,
+    [data-testid="stSidebar"] input,
+    [data-testid="stSidebar"] textarea {
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
+    }
+
+    .stTextInput input::placeholder,
+    .stDateInput input::placeholder,
+    .stTextArea textarea::placeholder,
+    [data-testid="stSidebar"] input::placeholder,
+    [data-testid="stSidebar"] textarea::placeholder {
+        color: rgba(17, 24, 39, 0.55) !important;
+        -webkit-text-fill-color: rgba(17, 24, 39, 0.55) !important;
+    }
+
+    .stButton button,
+    .stButton button p,
+    .stDownloadButton button,
+    .stDownloadButton button p {
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
+    }
     </style>
     """,
     unsafe_allow_html=True
@@ -807,10 +846,6 @@ class NaverReportRunner:
             if frames:
                 df_report = pd.concat(frames, ignore_index=True)
 
-        df_report = self._purchase_only(df_report)
-        df_report["Conversion count"] = pd.to_numeric(df_report["Conversion count"], errors="coerce").fillna(0)
-        df_report["Sales by conversion"] = pd.to_numeric(df_report["Sales by conversion"], errors="coerce").fillna(0)
-        
         df_report = df_report.merge(
             df_cam.drop_duplicates(subset=["Campaign ID","AD Group ID","AD ID"]),
             on=["Campaign ID","AD Group ID","AD ID"],
@@ -820,10 +855,10 @@ class NaverReportRunner:
         for c in ["Campaign Name","AD Group Name","Adgroup Type"]:
             df_report[c] = df_report[c].fillna("UNKNOWN")
 
-        df_report_group = df_report.groupby(
-            ["Date","Campaign Name","Campaign ID","AD Group ID","AD Group Name","Adgroup Type","AD ID","Media code","PC Mobile Type"],
-            as_index=False
-        )[["Conversion count","Sales by conversion"]].sum()
+        df_report_group = self._group_conversion_breakdown(
+            df_report,
+            ["Date","Campaign Name","Campaign ID","AD Group ID","AD Group Name","Adgroup Type","AD ID","Media code","PC Mobile Type"]
+        )
 
         df_report_group = df_report_group.rename(columns={"Media code":"Media Code"})
 
@@ -836,8 +871,9 @@ class NaverReportRunner:
 
         df_combined = pd.merge(df_report_group, df_report_group2, on=merge_keys, how="outer")
 
-        df_combined["Conversion count"] = pd.to_numeric(df_combined["Conversion count"], errors="coerce").fillna(0)
-        df_combined["Sales by conversion"] = pd.to_numeric(df_combined["Sales by conversion"], errors="coerce").fillna(0)
+        for c in ["Total conversion count","Total sales by conversion","Purchase conversion count",
+                  "Purchase sales by conversion","Cart conversion count","Cart sales by conversion"]:
+            df_combined[c] = pd.to_numeric(df_combined[c], errors="coerce").fillna(0)
         df_combined["Impression"] = pd.to_numeric(df_combined["Impression"], errors="coerce").fillna(0)
         df_combined["Click"] = pd.to_numeric(df_combined["Click"], errors="coerce").fillna(0)
         df_combined["Cost"] = pd.to_numeric(df_combined["Cost"], errors="coerce").fillna(0)
@@ -858,8 +894,12 @@ class NaverReportRunner:
             "Impression": "노출수",
             "Click": "클릭수",
             "Cost": "총비용(VAT포함,원)",
-            "Conversion count": "구매완료전환수",
-            "Sales by conversion": "구매완료매출액",
+            "Total conversion count": "총 전환수",
+            "Total sales by conversion": "총 전환매출액(원)",
+            "Purchase conversion count": "구매완료 전환수",
+            "Purchase sales by conversion": "구매완료 전환매출액(원)",
+            "Cart conversion count": "장바구니 전환수",
+            "Cart sales by conversion": "장바구니 전환매출액(원)",
             "Average of Rank": "평균 노출 순위"
         })
         sd = pd.to_datetime(start_date, format="%Y%m%d")
@@ -882,8 +922,12 @@ class NaverReportRunner:
                 "노출수": "sum",
                 "클릭수": "sum",
                 "총비용(VAT포함,원)": "sum",
-                "구매완료전환수": "sum",
-                "구매완료매출액": "sum",
+                "총 전환수": "sum",
+                "총 전환매출액(원)": "sum",
+                "구매완료 전환수": "sum",
+                "구매완료 전환매출액(원)": "sum",
+                "장바구니 전환수": "sum",
+                "장바구니 전환매출액(원)": "sum",
                 "평균 노출 순위": lambda x: np.average(
                     x,
                     weights=df_combined.loc[x.index, "노출수"]
@@ -895,6 +939,14 @@ class NaverReportRunner:
                 pd.to_numeric(df_final["평균 노출 순위"], errors="coerce")
                 .round(1)
             )
+        df_final = df_final[[
+            "일별","캠페인유형","캠페인","광고그룹","소재","PC/Mo",
+            "노출수","클릭수","총비용(VAT포함,원)",
+            "총 전환수","총 전환매출액(원)",
+            "구매완료 전환수","구매완료 전환매출액(원)",
+            "평균 노출 순위",
+            "장바구니 전환수","장바구니 전환매출액(원)"
+        ]]
         df_final = df_final.sort_values("일별")
         df_final["일별"] = pd.to_datetime(df_final["일별"], format="%Y%m%d").dt.normalize()
 
@@ -1028,10 +1080,6 @@ class NaverReportRunner:
             if frames:
                 df_report = pd.concat(frames, ignore_index=True)
 
-        df_report = self._purchase_only(df_report)
-        df_report["Conversion count"] = pd.to_numeric(df_report["Conversion count"], errors="coerce").fillna(0)
-        df_report["Sales by conversion"] = pd.to_numeric(df_report["Sales by conversion"], errors="coerce").fillna(0)
-
         df_report = df_report.merge(
             df_cam.drop_duplicates(subset=["Campaign ID","AD Group ID","AD ID"]),
             on=["Campaign ID","AD Group ID","AD ID"],
@@ -1041,10 +1089,10 @@ class NaverReportRunner:
         for c in ["Campaign Name","AD Group Name","Adgroup Type"]:
             df_report[c] = df_report[c].fillna("UNKNOWN")
 
-        df_report_group = df_report.groupby(
-            ["Date","Campaign Name","Campaign ID","AD Group ID","AD Group Name","Adgroup Type","AD ID","Media code","PC Mobile Type"],
-            as_index=False
-        )[["Conversion count","Sales by conversion"]].sum()
+        df_report_group = self._group_conversion_breakdown(
+            df_report,
+            ["Date","Campaign Name","Campaign ID","AD Group ID","AD Group Name","Adgroup Type","AD ID","Media code","PC Mobile Type"]
+        )
 
         df_report_group = df_report_group.rename(columns={"Media code":"Media Code"})
 
@@ -1057,8 +1105,9 @@ class NaverReportRunner:
 
         df_combined = pd.merge(df_report_group, df_report_group2, on=merge_keys, how="outer")
 
-        df_combined["Conversion count"] = pd.to_numeric(df_combined["Conversion count"], errors="coerce").fillna(0)
-        df_combined["Sales by conversion"] = pd.to_numeric(df_combined["Sales by conversion"], errors="coerce").fillna(0)
+        for c in ["Total conversion count","Total sales by conversion","Purchase conversion count",
+                  "Purchase sales by conversion","Cart conversion count","Cart sales by conversion"]:
+            df_combined[c] = pd.to_numeric(df_combined[c], errors="coerce").fillna(0)
         df_combined["Impression"] = pd.to_numeric(df_combined["Impression"], errors="coerce").fillna(0)
         df_combined["Click"] = pd.to_numeric(df_combined["Click"], errors="coerce").fillna(0)
         df_combined["Cost"] = pd.to_numeric(df_combined["Cost"], errors="coerce").fillna(0)
@@ -1079,11 +1128,20 @@ class NaverReportRunner:
             "Impression": "노출수",
             "Click": "클릭수",
             "Cost": "총비용(VAT포함,원)",
-            "Conversion count": "구매완료전환수",
-            "Sales by conversion": "구매완료매출액",
+            "Total conversion count": "총 전환수",
+            "Total sales by conversion": "총 전환매출액(원)",
+            "Purchase conversion count": "구매완료 전환수",
+            "Purchase sales by conversion": "구매완료 전환매출액(원)",
+            "Cart conversion count": "장바구니 전환수",
+            "Cart sales by conversion": "장바구니 전환매출액(원)",
             "Average of Rank": "평균 노출 순위"
         })
-        value_cols = ["노출수","클릭수","총비용(VAT포함,원)","구매완료전환수","구매완료매출액"]
+        value_cols = [
+            "노출수","클릭수","총비용(VAT포함,원)",
+            "총 전환수","총 전환매출액(원)",
+            "구매완료 전환수","구매완료 전환매출액(원)",
+            "장바구니 전환수","장바구니 전환매출액(원)"
+        ]
         df_combined[value_cols] = df_combined[value_cols].apply(pd.to_numeric, errors="coerce").fillna(0)
 
         sd = pd.to_datetime(start_date, format="%Y%m%d")
@@ -1099,12 +1157,24 @@ class NaverReportRunner:
                 "노출수": "sum",
                 "클릭수": "sum",
                 "총비용(VAT포함,원)": "sum",
-                "구매완료전환수": "sum",
-                "구매완료매출액": "sum",
+                "총 전환수": "sum",
+                "총 전환매출액(원)": "sum",
+                "구매완료 전환수": "sum",
+                "구매완료 전환매출액(원)": "sum",
+                "장바구니 전환수": "sum",
+                "장바구니 전환매출액(원)": "sum",
                 "평균 노출 순위" : "mean"
             })
         )
         week_result = week_result.round({'평균 노출 순위' : 1})
+        week_result = week_result[[
+            "캠페인유형","캠페인","광고그룹","소재","매체이름",
+            "노출수","클릭수","총비용(VAT포함,원)",
+            "총 전환수","총 전환매출액(원)",
+            "구매완료 전환수","구매완료 전환매출액(원)",
+            "평균 노출 순위",
+            "장바구니 전환수","장바구니 전환매출액(원)"
+        ]]
 
         week_result.insert(0, "해당월", month_label)
         week_result.insert(1, "해당주차", 해당주차)
@@ -1182,6 +1252,61 @@ class NaverReportRunner:
         picked.loc[picked["_priority"] < 2, ["Conversion count", "Sales by conversion"]] = 0
 
         return picked[result_cols]
+
+    def _group_conversion_breakdown(self, df, group_keys):
+        result_cols = group_keys + [
+            "Total conversion count", "Total sales by conversion",
+            "Purchase conversion count", "Purchase sales by conversion",
+            "Cart conversion count", "Cart sales by conversion",
+        ]
+        if df.empty:
+            return pd.DataFrame(columns=result_cols)
+
+        df = df.copy()
+        df["Conversion Type"] = df["Conversion Type"].fillna(0).astype(str).str.strip().str.lower()
+        df["Conversion count"] = pd.to_numeric(df["Conversion count"], errors="coerce").fillna(0)
+        df["Sales by conversion"] = pd.to_numeric(df["Sales by conversion"], errors="coerce").fillna(0)
+
+        purchase_values = {"1", "1.0", "purchase", "purchasing", "purchased", "구매", "구매완료"}
+        cart_values = {"2", "2.0", "add_to_cart", "cart", "장바구니", "장바구니담기"}
+
+        total = (
+            df.groupby(group_keys, as_index=False)[["Conversion count", "Sales by conversion"]]
+            .sum()
+            .rename(columns={
+                "Conversion count": "Total conversion count",
+                "Sales by conversion": "Total sales by conversion",
+            })
+        )
+
+        purchase = (
+            df[df["Conversion Type"].isin(purchase_values)]
+            .groupby(group_keys, as_index=False)[["Conversion count", "Sales by conversion"]]
+            .sum()
+            .rename(columns={
+                "Conversion count": "Purchase conversion count",
+                "Sales by conversion": "Purchase sales by conversion",
+            })
+        )
+
+        cart = (
+            df[df["Conversion Type"].isin(cart_values)]
+            .groupby(group_keys, as_index=False)[["Conversion count", "Sales by conversion"]]
+            .sum()
+            .rename(columns={
+                "Conversion count": "Cart conversion count",
+                "Sales by conversion": "Cart sales by conversion",
+            })
+        )
+
+        result = total.merge(purchase, on=group_keys, how="outer").merge(cart, on=group_keys, how="outer")
+        for c in result_cols:
+            if c not in result.columns:
+                result[c] = 0
+        for c in result_cols[len(group_keys):]:
+            result[c] = pd.to_numeric(result[c], errors="coerce").fillna(0)
+
+        return result[result_cols]
 
     def _extract_target_value(self, target):
         if isinstance(target, str):
@@ -1426,7 +1551,7 @@ class NaverReportRunner:
         for c in ["Campaign Name","AD Group Name","Adgroup Type"]:
             df_report[c] = df_report[c].fillna("UNKNOWN")
 
-        df_report_group = self._group_purchase_conversion_like_hwanggeum(
+        df_report_group = self._group_conversion_breakdown(
             df_report,
             ["Date","Campaign Name","Campaign ID","AD Group ID","AD Group Name","Adgroup Type","Search keyword"]
         )
@@ -1438,7 +1563,12 @@ class NaverReportRunner:
 
         df_combined = pd.merge(df_report_group, df_report_group2, on=merge_keys, how="outer")
 
-        for col in ["Conversion count","Sales by conversion","Impression","Click","Cost","Average of Rank"]:
+        for col in [
+            "Total conversion count","Total sales by conversion",
+            "Purchase conversion count","Purchase sales by conversion",
+            "Cart conversion count","Cart sales by conversion",
+            "Impression","Click","Cost","Average of Rank"
+        ]:
             if col in df_combined.columns:
                 df_combined[col] = pd.to_numeric(df_combined[col], errors="coerce").fillna(0)
 
@@ -1456,8 +1586,12 @@ class NaverReportRunner:
             "Impression": "노출수",
             "Click": "클릭수",
             "Cost": "총비용(VAT포함,원)",
-            "Conversion count": "구매완료전환수",
-            "Sales by conversion": "구매완료매출액",
+            "Total conversion count": "총 전환수",
+            "Total sales by conversion": "총 전환매출액(원)",
+            "Purchase conversion count": "구매완료 전환수",
+            "Purchase sales by conversion": "구매완료 전환매출액(원)",
+            "Cart conversion count": "장바구니 전환수",
+            "Cart sales by conversion": "장바구니 전환매출액(원)",
             "Average of Rank": "평균 노출 순위"
         })
 
@@ -1482,8 +1616,13 @@ class NaverReportRunner:
 
         # 3) PowerLink keywords
         final_columns2 = [
-            "일별","캠페인유형","캠페인","광고그룹","검색어","검색유형",
-            "노출수","클릭수","총비용(VAT포함,원)","구매완료전환수","구매완료매출액","평균 노출 순위"
+            "일별","캠페인유형","캠페인","광고그룹","검색어",
+            "노출수","클릭수","총비용(VAT포함,원)",
+            "총 전환수","총 전환매출액(원)",
+            "구매완료 전환수","구매완료 전환매출액(원)",
+            "평균 노출 순위",
+            "장바구니 전환수","장바구니 전환매출액(원)",
+            "검색유형"
         ]
         df_final2 = pd.DataFrame(columns=["해당월","해당주차","   ","    ","     "] + final_columns2)
 
@@ -1575,7 +1714,7 @@ class NaverReportRunner:
             for c in ["Campaign Name","AD Group Name","Adgroup Type"]:
                 df_conv[c] = df_conv[c].fillna("UNKNOWN")
 
-            df_conv_g = self._group_purchase_conversion_like_hwanggeum(
+            df_conv_g = self._group_conversion_breakdown(
                 df_conv,
                 ["Date","Campaign Name","Campaign ID","AD Group ID","AD Group Name","Adgroup Type","AD keyword ID","Keyword"]
             )
@@ -1587,7 +1726,12 @@ class NaverReportRunner:
 
             df_pl = pd.merge(df_conv_g, df_ad_g, on=mkeys, how="outer")
 
-            for col in ["Conversion count","Sales by conversion","Impression","Click","Cost","Average of Rank"]:
+            for col in [
+                "Total conversion count","Total sales by conversion",
+                "Purchase conversion count","Purchase sales by conversion",
+                "Cart conversion count","Cart sales by conversion",
+                "Impression","Click","Cost","Average of Rank"
+            ]:
                 if col in df_pl.columns:
                     df_pl[col] = pd.to_numeric(df_pl[col], errors="coerce").fillna(0)
 
@@ -1604,8 +1748,12 @@ class NaverReportRunner:
                 "Impression": "노출수",
                 "Click": "클릭수",
                 "Cost": "총비용(VAT포함,원)",
-                "Conversion count": "구매완료전환수",
-                "Sales by conversion": "구매완료매출액",
+                "Total conversion count": "총 전환수",
+                "Total sales by conversion": "총 전환매출액(원)",
+                "Purchase conversion count": "구매완료 전환수",
+                "Purchase sales by conversion": "구매완료 전환매출액(원)",
+                "Cart conversion count": "장바구니 전환수",
+                "Cart sales by conversion": "장바구니 전환매출액(원)",
                 "Average of Rank": "평균 노출 순위"
             })
 
@@ -1644,8 +1792,12 @@ class NaverReportRunner:
                     )
                     .agg({"Impression":"sum","Click":"sum","Cost":"sum"})
                 )
-                df_exp_g["Conversion count"] = 0
-                df_exp_g["Sales by conversion"] = 0
+                df_exp_g["Total conversion count"] = 0
+                df_exp_g["Total sales by conversion"] = 0
+                df_exp_g["Purchase conversion count"] = 0
+                df_exp_g["Purchase sales by conversion"] = 0
+                df_exp_g["Cart conversion count"] = 0
+                df_exp_g["Cart sales by conversion"] = 0
                 df_exp_g["Average of Rank"] = 0
                 df_exp_g["Adgroup Type"] = df_exp_g["Adgroup Type"].astype(str).map(self.Adgroup_Type_map).fillna("기타")
                 df_exp_g = df_exp_g.rename(columns={
@@ -1658,8 +1810,12 @@ class NaverReportRunner:
                     "Impression": "노출수",
                     "Click": "클릭수",
                     "Cost": "총비용(VAT포함,원)",
-                    "Conversion count": "구매완료전환수",
-                    "Sales by conversion": "구매완료매출액",
+                    "Total conversion count": "총 전환수",
+                    "Total sales by conversion": "총 전환매출액(원)",
+                    "Purchase conversion count": "구매완료 전환수",
+                    "Purchase sales by conversion": "구매완료 전환매출액(원)",
+                    "Cart conversion count": "장바구니 전환수",
+                    "Cart sales by conversion": "장바구니 전환매출액(원)",
                     "Average of Rank": "평균 노출 순위"
                 })
                 df_exp_g["일별"] = pd.to_datetime(df_exp_g["일별"], format="%Y%m%d", errors="coerce").dt.normalize()
@@ -1679,7 +1835,12 @@ class NaverReportRunner:
         df_all = pd.concat([df_final2, df_combined], ignore_index=True)
 
         group_keys = ["캠페인유형", "캠페인", "광고그룹", "검색어", "검색유형"]
-        sum_cols   = ["노출수","클릭수","총비용(VAT포함,원)","구매완료전환수","구매완료매출액"]
+        sum_cols = [
+            "노출수","클릭수","총비용(VAT포함,원)",
+            "총 전환수","총 전환매출액(원)",
+            "구매완료 전환수","구매완료 전환매출액(원)",
+            "장바구니 전환수","장바구니 전환매출액(원)"
+        ]
 
         for k in group_keys:
             if k in df_all.columns:
@@ -1708,8 +1869,12 @@ class NaverReportRunner:
                 "노출수":"sum",
                 "클릭수":"sum",
                 "총비용(VAT포함,원)":"sum",
-                "구매완료전환수":"sum",
-                "구매완료매출액":"sum",
+                "총 전환수":"sum",
+                "총 전환매출액(원)":"sum",
+                "구매완료 전환수":"sum",
+                "구매완료 전환매출액(원)":"sum",
+                "장바구니 전환수":"sum",
+                "장바구니 전환매출액(원)":"sum",
                 "SumRank":"sum"
             })
         )
@@ -1722,6 +1887,15 @@ class NaverReportRunner:
 
         df_total = df_total.drop(columns=["SumRank"], errors="ignore")
         df_total = df_total.sort_values("총비용(VAT포함,원)", ascending=False).reset_index(drop=True)
+        df_total = df_total[[
+            "캠페인유형","캠페인","광고그룹","검색어",
+            "노출수","클릭수","총비용(VAT포함,원)",
+            "총 전환수","총 전환매출액(원)",
+            "구매완료 전환수","구매완료 전환매출액(원)",
+            "평균 노출 순위",
+            "장바구니 전환수","장바구니 전환매출액(원)",
+            "검색유형"
+        ]]
         
         df_total.insert(0, "해당월", month_label)
         df_total.insert(1, "해당주차", 해당주차)
@@ -1856,10 +2030,6 @@ class NaverReportRunner:
             if frames:
                 df_report = pd.concat(frames, ignore_index=True)
 
-        df_report = self._purchase_only(df_report)
-        df_report["Conversion count"] = pd.to_numeric(df_report["Conversion count"], errors="coerce").fillna(0)
-        df_report["Sales by conversion"] = pd.to_numeric(df_report["Sales by conversion"], errors="coerce").fillna(0)
-
         df_report = df_report.merge(
             df_cam.drop_duplicates(subset=["Campaign ID","AD Group ID","AD ID"]),
             on=["Campaign ID","AD Group ID","AD ID"],
@@ -1869,10 +2039,10 @@ class NaverReportRunner:
         for c in ["Campaign Name","AD Group Name","Adgroup Type"]:
             df_report[c] = df_report[c].fillna("UNKNOWN")
 
-        df_report_group = df_report.groupby(
-            ["Date","Campaign Name","Campaign ID","AD Group ID","AD Group Name","Adgroup Type","AD ID","Media code","PC Mobile Type"],
-            as_index=False
-        )[["Conversion count","Sales by conversion"]].sum()
+        df_report_group = self._group_conversion_breakdown(
+            df_report,
+            ["Date","Campaign Name","Campaign ID","AD Group ID","AD Group Name","Adgroup Type","AD ID","Media code","PC Mobile Type"]
+        )
 
         df_report_group = df_report_group.rename(columns={"Media code":"Media Code"})
 
@@ -1881,8 +2051,9 @@ class NaverReportRunner:
 
         df_combined = pd.merge(df_report_group, df_report_group2, on=merge_keys, how="outer")
 
-        df_combined["Conversion count"] = pd.to_numeric(df_combined["Conversion count"], errors="coerce").fillna(0)
-        df_combined["Sales by conversion"] = pd.to_numeric(df_combined["Sales by conversion"], errors="coerce").fillna(0)
+        for c in ["Total conversion count","Total sales by conversion","Purchase conversion count",
+                  "Purchase sales by conversion","Cart conversion count","Cart sales by conversion"]:
+            df_combined[c] = pd.to_numeric(df_combined[c], errors="coerce").fillna(0)
         df_combined["Impression"] = pd.to_numeric(df_combined["Impression"], errors="coerce").fillna(0)
         df_combined["Click"] = pd.to_numeric(df_combined["Click"], errors="coerce").fillna(0)
         df_combined["Cost"] = pd.to_numeric(df_combined["Cost"], errors="coerce").fillna(0)
@@ -1903,8 +2074,12 @@ class NaverReportRunner:
             "Impression": "노출수",
             "Click": "클릭수",
             "Cost": "총비용(VAT포함,원)",
-            "Conversion count": "구매완료전환수",
-            "Sales by conversion": "구매완료매출액",
+            "Total conversion count": "총 전환수",
+            "Total sales by conversion": "총 전환매출액(원)",
+            "Purchase conversion count": "구매완료 전환수",
+            "Purchase sales by conversion": "구매완료 전환매출액(원)",
+            "Cart conversion count": "장바구니 전환수",
+            "Cart sales by conversion": "장바구니 전환매출액(원)",
             "Average of Rank": "평균 노출 순위"
         })
         sd = pd.to_datetime(start_date, format="%Y%m%d")
@@ -1915,7 +2090,11 @@ class NaverReportRunner:
                 
         final_columns = [
             "일별","캠페인유형","캠페인","광고그룹","소재","PC/Mo",
-            "노출수","클릭수","총비용(VAT포함,원)","구매완료전환수","구매완료매출액","평균 노출 순위"
+            "노출수","클릭수","총비용(VAT포함,원)",
+            "총 전환수","총 전환매출액(원)",
+            "구매완료 전환수","구매완료 전환매출액(원)",
+            "평균 노출 순위",
+            "장바구니 전환수","장바구니 전환매출액(원)"
         ]
 
         final_columns = [c for c in final_columns if c in df_combined.columns]
@@ -1935,8 +2114,12 @@ class NaverReportRunner:
                 "노출수": "sum",
                 "클릭수": "sum",
                 "총비용(VAT포함,원)": "sum",
-                "구매완료전환수": "sum",
-                "구매완료매출액": "sum",
+                "총 전환수": "sum",
+                "총 전환매출액(원)": "sum",
+                "구매완료 전환수": "sum",
+                "구매완료 전환매출액(원)": "sum",
+                "장바구니 전환수": "sum",
+                "장바구니 전환매출액(원)": "sum",
                 "평균 노출 순위": lambda x: np.average(
                     x,
                     weights=df_combined.loc[x.index, "노출수"]
@@ -1948,6 +2131,7 @@ class NaverReportRunner:
                 pd.to_numeric(df_final["평균 노출 순위"], errors="coerce")
                 .round(1)
             )
+        df_final = df_final[final_columns]
         df_final = df_final.sort_values("일별")
         df_final["일별"] = pd.to_datetime(df_final["일별"], format="%Y%m%d").dt.normalize()
 
@@ -1962,7 +2146,12 @@ class NaverReportRunner:
         self.log("[OK] 일별 통합 데이터 시트 완료!")
 
         # Write ad/material report sheet
-        value_cols = ["노출수", "클릭수", "총비용(VAT포함,원)", "구매완료전환수", "구매완료매출액"]
+        value_cols = [
+            "노출수", "클릭수", "총비용(VAT포함,원)",
+            "총 전환수","총 전환매출액(원)",
+            "구매완료 전환수","구매완료 전환매출액(원)",
+            "장바구니 전환수","장바구니 전환매출액(원)"
+        ]
         for c in value_cols:
             if c in df_combined.columns:
                 df_combined[c] = pd.to_numeric(df_combined[c], errors="coerce").fillna(0)
@@ -1972,8 +2161,12 @@ class NaverReportRunner:
             "노출수": "sum",
             "클릭수": "sum",
             "총비용(VAT포함,원)": "sum",
-            "구매완료전환수": "sum",
-            "구매완료매출액": "sum",
+            "총 전환수": "sum",
+            "총 전환매출액(원)": "sum",
+            "구매완료 전환수": "sum",
+            "구매완료 전환매출액(원)": "sum",
+            "장바구니 전환수": "sum",
+            "장바구니 전환매출액(원)": "sum",
         }
         if "평균 노출 순위" in df_combined.columns:
             agg_map["평균 노출 순위"] = "mean"
@@ -1987,6 +2180,14 @@ class NaverReportRunner:
 
         if "평균 노출 순위" in df_ad_period.columns:
             df_ad_period["평균 노출 순위"] = df_ad_period["평균 노출 순위"].round(1)
+        df_ad_period = df_ad_period[[
+            "캠페인유형","캠페인","광고그룹","소재","매체이름",
+            "노출수","클릭수","총비용(VAT포함,원)",
+            "총 전환수","총 전환매출액(원)",
+            "구매완료 전환수","구매완료 전환매출액(원)",
+            "평균 노출 순위",
+            "장바구니 전환수","장바구니 전환매출액(원)"
+        ]]
 
         df_ad_period.insert(0, "해당월", month_label)
         df_ad_period.insert(1, "해당주차", 해당주차)

@@ -2,4 +2,4 @@ numpy
 pandas
 requests
 streamlit
-openpyxl
+openpyxl==3.1.5

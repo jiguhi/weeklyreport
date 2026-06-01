@@ -278,6 +278,13 @@ def persist_state():
             current_config[key] = st.session_state[key]
     save_config(current_config)
 
+def can_open_file_dialog() -> bool:
+    try:
+        import tkinter  # noqa: F401
+        return True
+    except Exception:
+        return False
+
 def choose_excel_path(state_key: str):
     try:
         import tkinter as tk
@@ -306,6 +313,9 @@ def choose_excel_path(state_key: str):
         st.session_state["_file_dialog_error"] = str(e)
 
 def excel_path_input(label: str, state_key: str):
+    if not can_open_file_dialog():
+        return st.text_input(label, value=st.session_state[state_key], key=state_key, on_change=persist_state)
+
     input_col, button_col = st.columns([5, 1])
     value = input_col.text_input(label, value=st.session_state[state_key], key=state_key, on_change=persist_state)
     button_col.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
@@ -2278,9 +2288,6 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 💾 설정 보존")
     st.caption("입력한 데이터와 날짜 정보는 로컬 환경에 자동으로 암호화 및 저장되어 다음 번 재실행 시 유지됩니다.")
-
-if "_file_dialog_error" in st.session_state:
-    st.warning(f"파일 선택창을 열 수 없습니다: {st.session_state.pop('_file_dialog_error')}")
 
 # Main Screen Layout
 col1, col2 = st.columns(2)

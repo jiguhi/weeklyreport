@@ -278,50 +278,6 @@ def persist_state():
             current_config[key] = st.session_state[key]
     save_config(current_config)
 
-def can_open_file_dialog() -> bool:
-    try:
-        import tkinter  # noqa: F401
-        return True
-    except Exception:
-        return False
-
-def choose_excel_path(state_key: str):
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-
-        current_path = st.session_state.get(state_key, "")
-        initial_dir = os.path.dirname(current_path) if current_path else os.getcwd()
-        initial_file = os.path.basename(current_path) if current_path else "report.xlsx"
-
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        selected_path = filedialog.asksaveasfilename(
-            title="엑셀 파일 저장 경로 선택",
-            initialdir=initial_dir if os.path.isdir(initial_dir) else os.getcwd(),
-            initialfile=initial_file,
-            defaultextension=".xlsx",
-            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
-        )
-        root.destroy()
-
-        if selected_path:
-            st.session_state[state_key] = selected_path.replace("\\", "/")
-            persist_state()
-    except Exception as e:
-        st.session_state["_file_dialog_error"] = str(e)
-
-def excel_path_input(label: str, state_key: str):
-    if not can_open_file_dialog():
-        return st.text_input(label, value=st.session_state[state_key], key=state_key, on_change=persist_state)
-
-    input_col, button_col = st.columns([5, 1])
-    value = input_col.text_input(label, value=st.session_state[state_key], key=state_key, on_change=persist_state)
-    button_col.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-    button_col.button("찾아보기", key=f"{state_key}_browse", on_click=choose_excel_path, args=(state_key,), use_container_width=True)
-    return value
-
 # ==========================================
 # 3. In-memory Realtime Logging Console
 # ==========================================
@@ -933,17 +889,7 @@ class NaverReportRunner:
             df_report_group[k]  = df_report_group[k].astype(str).str.strip()
             df_report_group2[k] = df_report_group2[k].astype(str).str.strip()
 
-        df_combined = self._safe_outer_merge(
-            df_report_group,
-            df_report_group2,
-            merge_keys,
-            left_numeric_cols=[
-                "Total conversion count", "Total sales by conversion",
-                "Purchase conversion count", "Purchase sales by conversion",
-                "Cart conversion count", "Cart sales by conversion",
-            ],
-            right_numeric_cols=["Impression", "Click", "Cost", "Sum of Ad Rank", "Average of Rank"],
-        )
+        df_combined = pd.merge(df_report_group, df_report_group2, on=merge_keys, how="outer")
 
         for c in ["Total conversion count","Total sales by conversion","Purchase conversion count",
                   "Purchase sales by conversion","Cart conversion count","Cart sales by conversion"]:
@@ -1420,10 +1366,11 @@ class NaverReportRunner:
     def _safe_outer_merge(self, left, right, keys, left_numeric_cols=None, right_numeric_cols=None):
         left_numeric_cols = left_numeric_cols or []
         right_numeric_cols = right_numeric_cols or []
+        left = pd.DataFrame() if left is None else left.copy()
+        right = pd.DataFrame() if right is None else right.copy()
         all_cols = list(dict.fromkeys(keys + list(left.columns) + list(right.columns)))
 
         def normalize(df, numeric_cols):
-            df = df.copy()
             for key in keys:
                 if key not in df.columns:
                     df[key] = pd.Series(dtype="object")
@@ -1711,7 +1658,17 @@ class NaverReportRunner:
             df_report_group[k]  = df_report_group[k].astype(str).str.strip()
             df_report_group2[k] = df_report_group2[k].astype(str).str.strip()
 
-        df_combined = pd.merge(df_report_group, df_report_group2, on=merge_keys, how="outer")
+        df_combined = self._safe_outer_merge(
+            df_report_group,
+            df_report_group2,
+            merge_keys,
+            left_numeric_cols=[
+                "Total conversion count", "Total sales by conversion",
+                "Purchase conversion count", "Purchase sales by conversion",
+                "Cart conversion count", "Cart sales by conversion",
+            ],
+            right_numeric_cols=["Impression", "Click", "Cost", "Sum of Ad Rank", "Average of Rank"],
+        )
 
         for col in [
             "Total conversion count","Total sales by conversion",
@@ -2411,7 +2368,12 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("### 💾 설정 보존")
-    st.caption("입력한 데이터와 날짜 정보는 로컬 환경에 자동으로 암호화 및 저장되어 다음 번 재실행 시 유지됩니다.")
+    st.markdown(
+        "<p style='color:#6b7280; font-size:0.9rem; line-height:1.7; margin:0;'>"
+        "입력한 데이터와 날짜 정보는 로컬 환경에 자동으로 암호화 및 저장되어 다음 번 재실행 시 유지됩니다."
+        "</p>",
+        unsafe_allow_html=True
+    )
 
 # Main Screen Layout
 col1, col2 = st.columns(2)
@@ -2431,7 +2393,7 @@ with col1:
         r1_s = subcol1.text_input("시작일 YYYYMMDD", value=st.session_state["r1_start"], key="r1_start", on_change=persist_state)
         r1_e = subcol2.text_input("종료일 YYYYMMDD", value=st.session_state["r1_end"], key="r1_end", on_change=persist_state)
         
-        r1_excel = excel_path_input("엑셀 파일 경로 (.xlsx)", "r1_excel")
+        r1_excel = st.text_input("엑셀 파일 경로 (.xlsx)", value=st.session_state["r1_excel"], key="r1_excel", on_change=persist_state)
         r1_sheet = st.text_input("일별 시트 이름", value=st.session_state["r1_sheet"], key="r1_sheet", on_change=persist_state)
         
         r1_btn = st.button("일별 보고서 생성", key="r1_btn_run", use_container_width=True)
@@ -2451,7 +2413,7 @@ with col2:
         r2_s = subcol1.text_input("시작일 YYYYMMDD", value=st.session_state["r2_start"], key="r2_start", on_change=persist_state)
         r2_e = subcol2.text_input("종료일 YYYYMMDD", value=st.session_state["r2_end"], key="r2_end", on_change=persist_state)
         
-        r2_excel = excel_path_input("엑셀 파일 경로 (.xlsx)", "r2_excel")
+        r2_excel = st.text_input("엑셀 파일 경로 (.xlsx)", value=st.session_state["r2_excel"], key="r2_excel", on_change=persist_state)
         r2_sheet = st.text_input("소재별 시트 이름", value=st.session_state["r2_sheet"], key="r2_sheet", on_change=persist_state)
         
         r2_btn = st.button("소재별 보고서 생성", key="r2_btn_run", use_container_width=True)
@@ -2473,7 +2435,7 @@ with col3:
         r3_s = subcol1.text_input("시작일 YYYYMMDD", value=st.session_state["r3_start"], key="r3_start", on_change=persist_state)
         r3_e = subcol2.text_input("종료일 YYYYMMDD", value=st.session_state["r3_end"], key="r3_end", on_change=persist_state)
         
-        r3_excel = excel_path_input("엑셀 파일 경로 (.xlsx)", "r3_excel")
+        r3_excel = st.text_input("엑셀 파일 경로 (.xlsx)", value=st.session_state["r3_excel"], key="r3_excel", on_change=persist_state)
         r3_sheet = st.text_input("검색어 시트 이름", value=st.session_state["r3_sheet"], key="r3_sheet", on_change=persist_state)
         
         r3_btn = st.button("검색어 보고서 생성", key="r3_btn_run", use_container_width=True)
@@ -2493,7 +2455,7 @@ with col4:
         all_s = subcol1.text_input("시작일 YYYYMMDD", value=st.session_state["all_start"], key="all_start", on_change=persist_state)
         all_e = subcol2.text_input("종료일 YYYYMMDD", value=st.session_state["all_end"], key="all_end", on_change=persist_state)
         
-        all_excel = excel_path_input("엑셀 전체 보고서 저장 경로 (.xlsx)", "all_excel")
+        all_excel = st.text_input("엑셀 전체 보고서 저장 경로 (.xlsx)", value=st.session_state["all_excel"], key="all_excel", on_change=persist_state)
         
         st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
         r4_btn = st.button("⚡ 전체 보고서 실행 버튼 (일별 + 소재별 + 검색어 일괄)", key="r4_btn_run", use_container_width=True)

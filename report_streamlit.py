@@ -933,7 +933,17 @@ class NaverReportRunner:
             df_report_group[k]  = df_report_group[k].astype(str).str.strip()
             df_report_group2[k] = df_report_group2[k].astype(str).str.strip()
 
-        df_combined = pd.merge(df_report_group, df_report_group2, on=merge_keys, how="outer")
+        df_combined = self._safe_outer_merge(
+            df_report_group,
+            df_report_group2,
+            merge_keys,
+            left_numeric_cols=[
+                "Total conversion count", "Total sales by conversion",
+                "Purchase conversion count", "Purchase sales by conversion",
+                "Cart conversion count", "Cart sales by conversion",
+            ],
+            right_numeric_cols=["Impression", "Click", "Cost", "Sum of Ad Rank", "Average of Rank"],
+        )
 
         for c in ["Total conversion count","Total sales by conversion","Purchase conversion count",
                   "Purchase sales by conversion","Cart conversion count","Cart sales by conversion"]:
@@ -1407,6 +1417,47 @@ class NaverReportRunner:
 
         return df[columns]
 
+    def _safe_outer_merge(self, left, right, keys, left_numeric_cols=None, right_numeric_cols=None):
+        left_numeric_cols = left_numeric_cols or []
+        right_numeric_cols = right_numeric_cols or []
+        all_cols = list(dict.fromkeys(keys + list(left.columns) + list(right.columns)))
+
+        def normalize(df, numeric_cols):
+            df = df.copy()
+            for key in keys:
+                if key not in df.columns:
+                    df[key] = pd.Series(dtype="object")
+                df[key] = df[key].astype("object").fillna("").astype(str).str.strip()
+            for col in numeric_cols:
+                if col not in df.columns:
+                    df[col] = 0
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+            return df
+
+        left = normalize(left, left_numeric_cols)
+        right = normalize(right, right_numeric_cols)
+
+        if left.empty and right.empty:
+            result = pd.DataFrame(columns=all_cols)
+            for col in left_numeric_cols + right_numeric_cols:
+                if col in result.columns:
+                    result[col] = pd.Series(dtype="float64")
+            return result
+        if left.empty:
+            result = right.copy()
+            for col in left_numeric_cols:
+                if col not in result.columns:
+                    result[col] = 0
+            return result
+        if right.empty:
+            result = left.copy()
+            for col in right_numeric_cols:
+                if col not in result.columns:
+                    result[col] = 0
+            return result
+
+        return pd.merge(left, right, on=keys, how="outer")
+
     def _extract_target_value(self, target):
         if isinstance(target, str):
             text = target.strip()
@@ -1825,7 +1876,17 @@ class NaverReportRunner:
                 df_conv_g[k] = df_conv_g[k].astype(str).str.strip()
                 df_ad_g[k]   = df_ad_g[k].astype(str).str.strip()
 
-            df_pl = pd.merge(df_conv_g, df_ad_g, on=mkeys, how="outer")
+            df_pl = self._safe_outer_merge(
+                df_conv_g,
+                df_ad_g,
+                mkeys,
+                left_numeric_cols=[
+                    "Total conversion count", "Total sales by conversion",
+                    "Purchase conversion count", "Purchase sales by conversion",
+                    "Cart conversion count", "Cart sales by conversion",
+                ],
+                right_numeric_cols=["Impression", "Click", "Cost", "Sum of Ad Rank", "Average of Rank"],
+            )
 
             for col in [
                 "Total conversion count","Total sales by conversion",

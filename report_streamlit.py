@@ -1382,6 +1382,31 @@ class NaverReportRunner:
                 df[col] = pd.Series(dtype="float64")
         return df
 
+    def _normalize_keyword_output_frame(self, df, columns):
+        numeric_cols = [
+            "노출수","클릭수","총비용(VAT포함,원)",
+            "총 전환수","총 전환매출액(원)",
+            "구매완료 전환수","구매완료 전환매출액(원)",
+            "평균 노출 순위",
+            "장바구니 전환수","장바구니 전환매출액(원)"
+        ]
+
+        if df is None or df.empty:
+            return self._empty_report_frame(columns, numeric_cols=numeric_cols)
+
+        df = df.copy()
+        for col in columns:
+            if col not in df.columns:
+                df[col] = 0 if col in numeric_cols else ""
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+        for col in [c for c in columns if c not in numeric_cols]:
+            if col in df.columns:
+                df[col] = df[col].astype(str).replace("nan", "").fillna("")
+
+        return df[columns]
+
     def _extract_target_value(self, target):
         if isinstance(target, str):
             text = target.strip()
@@ -1698,7 +1723,9 @@ class NaverReportRunner:
             "장바구니 전환수","장바구니 전환매출액(원)",
             "검색유형"
         ]
-        df_final2 = pd.DataFrame(columns=["해당월","해당주차","   ","    ","     "] + final_columns2)
+        df_final2 = self._normalize_keyword_output_frame(pd.DataFrame(), final_columns2)
+
+        df_combined = self._normalize_keyword_output_frame(df_combined, final_columns2)
 
         try:
             uri_kw = "/ncc/keywords"
@@ -1895,7 +1922,9 @@ class NaverReportRunner:
                 df_exp_g["일별"] = pd.to_datetime(df_exp_g["일별"], format="%Y%m%d", errors="coerce").dt.normalize()
                 df_exp_final = df_exp_g[final_columns2].copy()
 
-            df_final2 = pd.concat([df_pl[final_columns2].copy(), df_exp_final], ignore_index=True)
+            df_pl_final = self._normalize_keyword_output_frame(df_pl, final_columns2)
+            df_exp_final = self._normalize_keyword_output_frame(df_exp_final, final_columns2)
+            df_final2 = pd.concat([df_pl_final, df_exp_final], ignore_index=True)
             df_final2.insert(0, "해당월", month_label)
             df_final2.insert(1, "해당주차", 해당주차)
             df_final2.insert(2, "   ", "")
@@ -1904,9 +1933,11 @@ class NaverReportRunner:
 
         except Exception as e:
             self.log(f"파워링크 리포트 없음/미운영 -> 빈 DF 처리: {e}")
+            df_final2 = self._normalize_keyword_output_frame(pd.DataFrame(), final_columns2)
 
         # 4) Concat & Aggregate
         df_all = pd.concat([df_final2, df_combined], ignore_index=True)
+        df_all = self._normalize_keyword_output_frame(df_all, final_columns2)
 
         group_keys = ["캠페인유형", "캠페인", "광고그룹", "검색어", "검색유형"]
         sum_cols = [

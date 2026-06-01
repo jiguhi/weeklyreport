@@ -1324,7 +1324,10 @@ class NaverReportRunner:
             "Cart conversion count", "Cart sales by conversion",
         ]
         if df.empty:
-            return pd.DataFrame(columns=result_cols)
+            result = pd.DataFrame(columns=result_cols)
+            for c in result_cols[len(group_keys):]:
+                result[c] = pd.Series(dtype="float64")
+            return result
 
         df = df.copy()
         df["Conversion Type"] = df["Conversion Type"].fillna(0).astype(str).str.strip().str.lower()
@@ -1371,6 +1374,13 @@ class NaverReportRunner:
             result[c] = pd.to_numeric(result[c], errors="coerce").fillna(0)
 
         return result[result_cols]
+
+    def _empty_report_frame(self, columns, numeric_cols=None):
+        df = pd.DataFrame(columns=columns)
+        for col in numeric_cols or []:
+            if col in df.columns:
+                df[col] = pd.Series(dtype="float64")
+        return df
 
     def _extract_target_value(self, target):
         if isinstance(target, str):
@@ -1927,6 +1937,36 @@ class NaverReportRunner:
             (df_sum_base["검색어"] != "nan")
         ]
 
+        keyword_output_cols = [
+            "캠페인유형","캠페인","광고그룹","검색어",
+            "노출수","클릭수","총비용(VAT포함,원)",
+            "총 전환수","총 전환매출액(원)",
+            "구매완료 전환수","구매완료 전환매출액(원)",
+            "평균 노출 순위",
+            "장바구니 전환수","장바구니 전환매출액(원)",
+            "검색유형"
+        ]
+
+        if df_sum_base.empty:
+            df_total = self._empty_report_frame(
+                keyword_output_cols,
+                numeric_cols=[
+                    "노출수","클릭수","총비용(VAT포함,원)",
+                    "총 전환수","총 전환매출액(원)",
+                    "구매완료 전환수","구매완료 전환매출액(원)",
+                    "평균 노출 순위",
+                    "장바구니 전환수","장바구니 전환매출액(원)"
+                ]
+            )
+            df_total.insert(0, "해당월", month_label)
+            df_total.insert(1, "해당주차", 해당주차)
+            df_total.insert(2, "   ", "")
+            df_total.insert(3, "    ", "")
+            df_total.insert(4, "     ", "")
+            self._append_df_to_excel(df_total, excel, sheet_name)
+            self.log("검색어 보고서 완료(데이터 없음)")
+            return
+
         df_total = (
             df_sum_base.groupby(group_keys, as_index=False)
             .agg({
@@ -1951,15 +1991,7 @@ class NaverReportRunner:
 
         df_total = df_total.drop(columns=["SumRank"], errors="ignore")
         df_total = df_total.sort_values("총비용(VAT포함,원)", ascending=False).reset_index(drop=True)
-        df_total = df_total[[
-            "캠페인유형","캠페인","광고그룹","검색어",
-            "노출수","클릭수","총비용(VAT포함,원)",
-            "총 전환수","총 전환매출액(원)",
-            "구매완료 전환수","구매완료 전환매출액(원)",
-            "평균 노출 순위",
-            "장바구니 전환수","장바구니 전환매출액(원)",
-            "검색유형"
-        ]]
+        df_total = df_total[keyword_output_cols]
         
         df_total.insert(0, "해당월", month_label)
         df_total.insert(1, "해당주차", 해당주차)

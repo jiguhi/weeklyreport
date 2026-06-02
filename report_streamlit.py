@@ -790,12 +790,17 @@ class NaverReportRunner:
         df_ad = pd.DataFrame(ads_all)[["nccAdId", "nccAdgroupId"]].rename(
             columns={"nccAdId": "AD ID", "nccAdgroupId": "AD Group ID"}
         )
+        df_campaign = self._normalize_id_columns(df_campaign, ["Campaign ID"])
+        df_ag = self._normalize_id_columns(df_ag, ["Campaign ID", "AD Group ID"])
+        df_ad = self._normalize_id_columns(df_ad, ["AD ID", "AD Group ID"])
+        ad_master_maps = self._build_ad_master_maps(df_campaign, df_ag, df_ad)
 
         df_cam = (
             df_ag.merge(df_campaign[["Campaign ID", "Campaign Name"]], on="Campaign ID", how="left")
                 .merge(df_ad, on="AD Group ID", how="left")
                 [["Campaign Name","Campaign ID","AD Group Name","AD Group ID","AD ID","Adgroup Type"]]
         )
+        df_cam = self._fill_ad_master_columns(df_cam, ad_master_maps)
 
         # 4) AD report downloads
         column_names2 = [
@@ -816,12 +821,14 @@ class NaverReportRunner:
         df_report2["Click"] = pd.to_numeric(df_report2["Click"], errors="coerce").fillna(0)
         df_report2['Average of Rank'] = df_report2['Sum of Ad Rank'] / df_report2['Impression']
         df_report2 = df_report2.round({'Average of Rank' : 1})
+        df_report2 = self._normalize_id_columns(df_report2, ["Campaign ID", "AD Group ID", "AD ID"])
 
         df_report2 = df_report2.merge(
             df_cam.drop_duplicates(subset=["Campaign ID","AD Group ID","AD ID"]),
             on=["Campaign ID","AD Group ID","AD ID"],
             how="left"
         )
+        df_report2 = self._fill_ad_master_columns(df_report2, ad_master_maps)
 
         for c in ["Campaign Name","AD Group Name","Adgroup Type"]:
             df_report2[c] = df_report2[c].fillna("UNKNOWN")
@@ -865,12 +872,14 @@ class NaverReportRunner:
 
             if frames:
                 df_report = pd.concat(frames, ignore_index=True)
+        df_report = self._normalize_id_columns(df_report, ["Campaign ID", "AD Group ID", "AD ID"])
 
         df_report = df_report.merge(
             df_cam.drop_duplicates(subset=["Campaign ID","AD Group ID","AD ID"]),
             on=["Campaign ID","AD Group ID","AD ID"],
             how="left"
         )
+        df_report = self._fill_ad_master_columns(df_report, ad_master_maps)
 
         for c in ["Campaign Name","AD Group Name","Adgroup Type"]:
             df_report[c] = df_report[c].fillna("UNKNOWN")
@@ -1028,12 +1037,17 @@ class NaverReportRunner:
         df_ad = pd.DataFrame(ads_all)[["nccAdId", "nccAdgroupId"]].rename(
             columns={"nccAdId": "AD ID", "nccAdgroupId": "AD Group ID"}
         )
+        df_campaign = self._normalize_id_columns(df_campaign, ["Campaign ID"])
+        df_ag = self._normalize_id_columns(df_ag, ["Campaign ID", "AD Group ID"])
+        df_ad = self._normalize_id_columns(df_ad, ["AD ID", "AD Group ID"])
+        ad_master_maps = self._build_ad_master_maps(df_campaign, df_ag, df_ad)
 
         df_cam = (
             df_ag.merge(df_campaign[["Campaign ID", "Campaign Name"]], on="Campaign ID", how="left")
                 .merge(df_ad, on="AD Group ID", how="left")
                 [["Campaign Name","Campaign ID","AD Group Name","AD Group ID","AD ID","Adgroup Type"]]
         )
+        df_cam = self._fill_ad_master_columns(df_cam, ad_master_maps)
 
         # 4) AD Report downloads
         column_names2 = [
@@ -1054,12 +1068,14 @@ class NaverReportRunner:
         df_report2["Click"] = pd.to_numeric(df_report2["Click"], errors="coerce").fillna(0)
         df_report2['Average of Rank'] = df_report2['Sum of Ad Rank'] / df_report2['Impression']
         df_report2 = df_report2.round({'Average of Rank' : 1})
+        df_report2 = self._normalize_id_columns(df_report2, ["Campaign ID", "AD Group ID", "AD ID"])
 
         df_report2 = df_report2.merge(
             df_cam.drop_duplicates(subset=["Campaign ID","AD Group ID","AD ID"]),
             on=["Campaign ID","AD Group ID","AD ID"],
             how="left"
         )
+        df_report2 = self._fill_ad_master_columns(df_report2, ad_master_maps)
 
         for c in ["Campaign Name","AD Group Name","Adgroup Type"]:
             df_report2[c] = df_report2[c].fillna("UNKNOWN")
@@ -1099,12 +1115,14 @@ class NaverReportRunner:
                     continue
             if frames:
                 df_report = pd.concat(frames, ignore_index=True)
+        df_report = self._normalize_id_columns(df_report, ["Campaign ID", "AD Group ID", "AD ID"])
 
         df_report = df_report.merge(
             df_cam.drop_duplicates(subset=["Campaign ID","AD Group ID","AD ID"]),
             on=["Campaign ID","AD Group ID","AD ID"],
             how="left"
         )
+        df_report = self._fill_ad_master_columns(df_report, ad_master_maps)
 
         for c in ["Campaign Name","AD Group Name","Adgroup Type"]:
             df_report[c] = df_report[c].fillna("UNKNOWN")
@@ -1207,6 +1225,61 @@ class NaverReportRunner:
 
     def _empty_df(self, cols):
         return pd.DataFrame(columns=cols)
+
+    def _normalize_id_columns(self, df, columns):
+        df = pd.DataFrame() if df is None else df.copy()
+        for col in columns:
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.strip()
+                df[col] = df[col].replace({"nan": "", "None": "", "0": "", "0.0": ""})
+        return df
+
+    def _build_ad_master_maps(self, df_campaign, df_ag, df_ad):
+        df_campaign = self._normalize_id_columns(df_campaign, ["Campaign ID"])
+        df_ag = self._normalize_id_columns(df_ag, ["Campaign ID", "AD Group ID"])
+        df_ad = self._normalize_id_columns(df_ad, ["AD ID", "AD Group ID"])
+
+        campaign_name_map = df_campaign.dropna(subset=["Campaign ID"]).drop_duplicates("Campaign ID").set_index("Campaign ID")["Campaign Name"].to_dict()
+        ag_name_map = df_ag.dropna(subset=["AD Group ID"]).drop_duplicates("AD Group ID").set_index("AD Group ID")["AD Group Name"].to_dict()
+        ag_type_map = df_ag.dropna(subset=["AD Group ID"]).drop_duplicates("AD Group ID").set_index("AD Group ID")["Adgroup Type"].to_dict()
+        ag_campaign_map = df_ag.dropna(subset=["AD Group ID"]).drop_duplicates("AD Group ID").set_index("AD Group ID")["Campaign ID"].to_dict()
+        ad_group_map = df_ad.dropna(subset=["AD ID"]).drop_duplicates("AD ID").set_index("AD ID")["AD Group ID"].to_dict()
+
+        return {
+            "campaign_name": campaign_name_map,
+            "ag_name": ag_name_map,
+            "ag_type": ag_type_map,
+            "ag_campaign": ag_campaign_map,
+            "ad_group": ad_group_map,
+        }
+
+    def _fill_ad_master_columns(self, df, maps):
+        if df is None or df.empty:
+            return df
+
+        df = self._normalize_id_columns(df, ["Campaign ID", "AD Group ID", "AD ID"])
+        for col in ["Campaign Name", "AD Group Name", "Adgroup Type"]:
+            if col not in df.columns:
+                df[col] = ""
+
+        if "AD ID" in df.columns and "AD Group ID" in df.columns:
+            missing_ag = df["AD Group ID"].eq("")
+            df.loc[missing_ag, "AD Group ID"] = df.loc[missing_ag, "AD ID"].map(maps["ad_group"]).fillna("")
+
+        if "AD Group ID" in df.columns and "Campaign ID" in df.columns:
+            missing_campaign = df["Campaign ID"].eq("")
+            df.loc[missing_campaign, "Campaign ID"] = df.loc[missing_campaign, "AD Group ID"].map(maps["ag_campaign"]).fillna("")
+
+        missing_campaign_name = df["Campaign Name"].astype(str).str.strip().isin(["", "nan", "None", "UNKNOWN"])
+        df.loc[missing_campaign_name, "Campaign Name"] = df.loc[missing_campaign_name, "Campaign ID"].map(maps["campaign_name"]).fillna("UNKNOWN")
+
+        missing_ag_name = df["AD Group Name"].astype(str).str.strip().isin(["", "nan", "None", "UNKNOWN"])
+        df.loc[missing_ag_name, "AD Group Name"] = df.loc[missing_ag_name, "AD Group ID"].map(maps["ag_name"]).fillna("UNKNOWN")
+
+        missing_ag_type = df["Adgroup Type"].astype(str).str.strip().isin(["", "nan", "None", "UNKNOWN"])
+        df.loc[missing_ag_type, "Adgroup Type"] = df.loc[missing_ag_type, "AD Group ID"].map(maps["ag_type"]).fillna("UNKNOWN")
+
+        return df
 
     def _safe_read_report_statdt(self, report_type, d, cols, sep="\t"):
         try:
@@ -1362,6 +1435,36 @@ class NaverReportRunner:
                 df[col] = df[col].astype(str).replace("nan", "").fillna("")
 
         return df[columns]
+
+    def _drop_expanded_when_exact_exists(self, df):
+        if df is None or df.empty or "검색유형" not in df.columns:
+            return df
+
+        df = df.copy()
+        dedupe_keys = ["일별", "캠페인유형", "캠페인", "광고그룹", "검색어"]
+        for col in dedupe_keys + ["검색유형"]:
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.strip()
+
+        required_cols = dedupe_keys + ["검색유형"]
+        if any(col not in df.columns for col in required_cols):
+            return df
+
+        exact_keys = set(
+            map(
+                tuple,
+                df[df["검색유형"] == "일치"][dedupe_keys].drop_duplicates().to_numpy(),
+            )
+        )
+        if not exact_keys:
+            return df
+
+        is_expanded_duplicate = df.apply(
+            lambda row: row["검색유형"] == "확장"
+            and tuple(row[col] for col in dedupe_keys) in exact_keys,
+            axis=1,
+        )
+        return df[~is_expanded_duplicate].copy()
 
     def _safe_outer_merge(self, left, right, keys, left_numeric_cols=None, right_numeric_cols=None):
         left_numeric_cols = left_numeric_cols or []
@@ -1562,6 +1665,8 @@ class NaverReportRunner:
         df_campaign = pd.DataFrame(campaigns)[["nccCampaignId", "name"]].rename(
             columns={"nccCampaignId": "Campaign ID", "name": "Campaign Name"}
         )
+        df_campaign["Campaign ID"] = df_campaign["Campaign ID"].astype(str).str.strip()
+        campaign_name_map = df_campaign.set_index("Campaign ID")["Campaign Name"]
 
         uri_ag = "/ncc/adgroups"
         adgroups_all = []
@@ -1582,11 +1687,15 @@ class NaverReportRunner:
                 "adgroupType": "Adgroup Type"
             }
         )
+        for col in ["Campaign ID", "AD Group ID"]:
+            df_ag[col] = df_ag[col].astype(str).str.strip()
 
         df_cam = (
             df_ag.merge(df_campaign[["Campaign ID", "Campaign Name"]], on="Campaign ID", how="left")
                 [["Campaign Name", "Campaign ID", "AD Group Name", "AD Group ID", "Adgroup Type"]]
         )
+        for col in ["Campaign ID", "AD Group ID"]:
+            df_cam[col] = df_cam[col].astype(str).str.strip()
 
         # 2) Shopping keyword
         shopping_cols = [
@@ -1604,6 +1713,8 @@ class NaverReportRunner:
         df_report2["Impression"] = pd.to_numeric(df_report2["Impression"], errors="coerce").fillna(0)
         df_report2["Click"] = pd.to_numeric(df_report2["Click"], errors="coerce").fillna(0)
         df_report2["Sum of Ad Rank"] = pd.to_numeric(df_report2["Sum of Ad Rank"], errors="coerce").fillna(0)
+        for col in ["Campaign ID", "AD Group ID"]:
+            df_report2[col] = df_report2[col].astype(str).str.strip()
 
         df_report2 = df_report2.merge(
             df_cam.drop_duplicates(subset=["Campaign ID","AD Group ID"]),
@@ -1611,6 +1722,9 @@ class NaverReportRunner:
             how="left"
         )
 
+        df_report2["Campaign Name"] = df_report2["Campaign Name"].fillna(
+            df_report2["Campaign ID"].map(campaign_name_map)
+        )
         for c in ["Campaign Name","AD Group Name","Adgroup Type"]:
             df_report2[c] = df_report2[c].fillna("UNKNOWN")
 
@@ -1640,10 +1754,16 @@ class NaverReportRunner:
                 conv_frames.append(self._safe_read_report_statdt("SHOPPINGKEYWORD_CONVERSION_DETAIL", d, conv_cols))
             df_report = pd.concat(conv_frames, ignore_index=True) if conv_frames else pd.DataFrame(columns=conv_cols)
 
+        for col in ["Campaign ID", "AD Group ID"]:
+            df_report[col] = df_report[col].astype(str).str.strip()
+
         df_report = df_report.merge(
             df_cam.drop_duplicates(subset=["Campaign ID","AD Group ID"]),
             on=["Campaign ID","AD Group ID"],
             how="left"
+        )
+        df_report["Campaign Name"] = df_report["Campaign Name"].fillna(
+            df_report["Campaign ID"].map(campaign_name_map)
         )
         for c in ["Campaign Name","AD Group Name","Adgroup Type"]:
             df_report[c] = df_report[c].fillna("UNKNOWN")
@@ -1943,6 +2063,7 @@ class NaverReportRunner:
             df_pl_final = self._normalize_keyword_output_frame(df_pl, final_columns2)
             df_exp_final = self._normalize_keyword_output_frame(df_exp_final, final_columns2)
             df_final2 = pd.concat([df_pl_final, df_exp_final], ignore_index=True)
+            df_final2 = self._drop_expanded_when_exact_exists(df_final2)
             df_final2.insert(0, "해당월", month_label)
             df_final2.insert(1, "해당주차", 해당주차)
             df_final2.insert(2, "   ", "")
@@ -2100,12 +2221,17 @@ class NaverReportRunner:
         df_ad = pd.DataFrame(ads_all)[["nccAdId", "nccAdgroupId"]].rename(
             columns={"nccAdId": "AD ID", "nccAdgroupId": "AD Group ID"}
         )
+        df_campaign = self._normalize_id_columns(df_campaign, ["Campaign ID"])
+        df_ag = self._normalize_id_columns(df_ag, ["Campaign ID", "AD Group ID"])
+        df_ad = self._normalize_id_columns(df_ad, ["AD ID", "AD Group ID"])
+        ad_master_maps = self._build_ad_master_maps(df_campaign, df_ag, df_ad)
 
         df_cam = (
             df_ag.merge(df_campaign[["Campaign ID", "Campaign Name"]], on="Campaign ID", how="left")
                 .merge(df_ad, on="AD Group ID", how="left")
                 [["Campaign Name","Campaign ID","AD Group Name","AD Group ID","AD ID","Adgroup Type"]]
         )
+        df_cam = self._fill_ad_master_columns(df_cam, ad_master_maps)
 
         # 4) AD report downloads
         column_names2 = [
@@ -2126,12 +2252,14 @@ class NaverReportRunner:
         df_report2["Click"] = pd.to_numeric(df_report2["Click"], errors="coerce").fillna(0)
         df_report2['Average of Rank'] = df_report2['Sum of Ad Rank'] / df_report2['Impression']
         df_report2 = df_report2.round({'Average of Rank' : 1})
+        df_report2 = self._normalize_id_columns(df_report2, ["Campaign ID", "AD Group ID", "AD ID"])
 
         df_report2 = df_report2.merge(
             df_cam.drop_duplicates(subset=["Campaign ID","AD Group ID","AD ID"]),
             on=["Campaign ID","AD Group ID","AD ID"],
             how="left"
         )
+        df_report2 = self._fill_ad_master_columns(df_report2, ad_master_maps)
 
         for c in ["Campaign Name","AD Group Name","Adgroup Type"]:
             df_report2[c] = df_report2[c].fillna("UNKNOWN")
@@ -2174,12 +2302,14 @@ class NaverReportRunner:
                     continue
             if frames:
                 df_report = pd.concat(frames, ignore_index=True)
+        df_report = self._normalize_id_columns(df_report, ["Campaign ID", "AD Group ID", "AD ID"])
 
         df_report = df_report.merge(
             df_cam.drop_duplicates(subset=["Campaign ID","AD Group ID","AD ID"]),
             on=["Campaign ID","AD Group ID","AD ID"],
             how="left"
         )
+        df_report = self._fill_ad_master_columns(df_report, ad_master_maps)
 
         for c in ["Campaign Name","AD Group Name","Adgroup Type"]:
             df_report[c] = df_report[c].fillna("UNKNOWN")
